@@ -1,15 +1,15 @@
-name: Update news.mp3 if changed
+name: Update news.mp3 and Create Release
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # Every 30 minutes
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  update-mp3:
+  update-and-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -46,3 +46,15 @@ jobs:
           git add news.mp3 .last_hash.txt
           git commit -m "Update news.mp3 with latest version"
           git push
+
+      - name: Create GitHub Release with news.mp3
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          TAG="news-$TIMESTAMP"
+          gh release create "$TAG" \
+            --title "News Update $TIMESTAMP" \
+            --notes "Automated news.mp3 update" \
+            news.mp3
