@@ -1,0 +1,64 @@
+name: MP3 Release Updater
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Runs every 30 minutes
+  workflow_dispatch:         # Allow manual triggers
+
+permissions:
+  contents: write            # Required for creating releases
+
+jobs:
+  monitor-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # Required for git history access
+
+      - name: Download MP3
+        run: |
+          curl -s -o news.mp3 https://webservice.westfunk.de/audiodata/rabo/news.mp3
+
+      - name: Generate Hash
+        id: hash
+        run: |
+          HASH=$(sha256sum news.mp3 | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Check for Changes
+        id: check
+        run: |
+          if [ -f last_hash.txt ]; then
+            OLD_HASH=$(cat last_hash.txt)
+            if [ "$OLD_HASH" == "${{ steps.hash.outputs.hash }}" ]; then
+              echo "changed=false" >> $GITHUB_OUTPUT
+            else
+              echo "changed=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release (New MP3)
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          TAG="release-$TIMESTAMP"
+          gh release create $TAG \
+            --title "News Update $TIMESTAMP" \
+            --notes "Automated MP3 update" \
+            news.mp3
+          echo "${{ steps.hash.outputs.hash }}" > last_hash.txt
+
+      - name: Commit Hash Update
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions'
+          git config user.email 'actions@users.noreply.github.com'
+          git add last_hash.txt
+          git commit -m "Update MP3 hash"
+          git push
